@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Peta Online Kampus ITS - OpenStreetMap</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIINfQKjIByFwsnM+HQ5Rk2E11CWGz13M6s=" crossorigin="" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <style>
+    :root { --panel:#ffffff; --text:#1f2937; --muted:#6b7280; --accent:#0f766e; --line:#e5e7eb; }
+    html, body, #map { height:100%; width:100%; margin:0; padding:0; }
+    body { font-family: Arial, Helvetica, sans-serif; color:var(--text); background:#f6f7f8; }
+    #map { z-index:1; }
+    .panel { position:absolute; z-index:1000; top:14px; left:14px; width:360px; max-width:calc(100vw - 28px); max-height:calc(100vh - 28px); background:var(--panel); border-radius:16px; box-shadow:0 12px 35px rgba(0,0,0,.18); overflow:hidden; border:1px solid rgba(0,0,0,.08); }
+    .panel-header { padding:14px 16px 10px 16px; border-bottom:1px solid var(--line); }
+    .title { font-size:18px; font-weight:700; margin:0 0 4px; }
+    .subtitle { margin:0; color:var(--muted); font-size:12px; line-height:1.35; }
+    .search-wrap { padding:12px 14px; display:grid; gap:8px; border-bottom:1px solid var(--line); }
+    #searchInput { width:100%; box-sizing:border-box; padding:11px 12px; border:1px solid #cbd5e1; border-radius:12px; outline:none; font-size:14px; }
+    #searchInput:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(15,118,110,.15); }
+    .actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    button { cursor:pointer; border:0; border-radius:12px; padding:10px 9px; font-weight:700; background:var(--accent); color:white; font-size:12px; }
+    button.secondary { background:#e5e7eb; color:#111827; }
+    .meta { display:flex; justify-content:space-between; gap:8px; color:var(--muted); font-size:12px; }
+    .results { overflow:auto; max-height:40vh; }
+    .result-item { padding:11px 14px; border-bottom:1px solid #f0f1f3; cursor:pointer; }
+    .result-item:hover { background:#f8fafc; }
+    .result-name { font-weight:700; font-size:14px; }
+    .result-cat { color:var(--muted); font-size:12px; margin-top:3px; }
+    .legend { padding:10px 14px 12px; font-size:12px; color:var(--muted); line-height:1.45; background:#fafafa; }
+    .pill { display:inline-block; border-radius:999px; padding:3px 8px; background:#eef2ff; color:#3730a3; margin:2px 4px 2px 0; }
+    .leaflet-popup-content { margin:12px 14px; min-width:210px; }
+    .popup-title { font-weight:800; font-size:15px; margin-bottom:4px; }
+    .popup-cat { color:#0f766e; font-size:12px; font-weight:700; margin-bottom:8px; }
+    .popup-coord { font-family:Consolas, monospace; font-size:12px; color:#475569; }
+    .locate-note { font-size:11px; color:#64748b; margin-top:6px; }
+    @media (max-width:700px) {
+      .panel { top:auto; bottom:10px; left:10px; width:calc(100vw - 20px); max-height:46vh; border-radius:16px; }
+      .panel-header { padding:11px 12px 8px; }
+      .title { font-size:15px; }
+      .search-wrap { padding:9px 10px; }
+      .results { max-height:20vh; }
+      .legend { display:none; }
+      .leaflet-control-zoom { margin-top:12px !important; }
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <div class="panel">
+    <div class="panel-header">
+      <p class="title">Peta Lokasi Kampus ITS</p>
+      <p class="subtitle">Basemap OpenStreetMap. Titik lokasi diambil dari file KML “Titik Lokasi ITS”.</p>
+    </div>
+    <div class="search-wrap">
+      <input id="searchInput" list="locationList" placeholder="Cari gedung/departemen, contoh: Teknik Sipil, Rektorat, Perpustakaan..." autocomplete="off" />
+      <datalist id="locationList"></datalist>
+      <div class="actions">
+        <button id="searchBtn">Cari Lokasi</button>
+        <button id="gpsBtn" class="secondary">Posisi GPS Saya</button>
+      </div>
+      <div class="meta"><span id="countInfo">Memuat titik...</span><span id="roadInfo">Jalan: memuat...</span></div>
+      <div class="locate-note">Catatan: GPS aktif optimal bila file dibuka via HTTPS/Netlify atau localhost.</div>
+    </div>
+    <div id="results" class="results"></div>
+    <div class="legend">
+      <b>Layer peta:</b><br>
+      <span class="pill">Titik lokasi ITS</span>
+      <span class="pill">Jalan OSM</span>
+      <span class="pill">Radius GPS 500 m</span><br>
+      Klik titik/daftar lokasi untuk melihat nama, kategori, dan koordinat.
+    </div>
+  </div>
+
+<script>
+const LOCATIONS = [{"id":1,"name":"Graha ITS","lat":-7.276974740949804,"lon":112.7915879920713,"category":"Fasilitas Umum","description":""},{"id":2,"name":"Global Language Center","lat":-7.276983562058292,"lon":112.792811619422,"category":"Gedung/Fasilitas","description":""},{"id":3,"name":"Tower 3","lat":-7.27779011341039,"lon":112.7921765640406,"category":"Fasilitas Umum","description":""},{"id":4,"name":"Manajemen Bisnis","lat":-7.277915123859318,"lon":112.7926446450642,"category":"Departemen/Jurusan","description":""},{"id":5,"name":"Statistika Bisnis","lat":-7.278271510504662,"lon":112.7926426083688,"category":"Departemen/Jurusan","description":""},{"id":6,"name":"Teknik Instrumentasi","lat":-7.27830016503278,"lon":112.7921233746225,"category":"Departemen/Jurusan","description":""},{"id":7,"name":"Teknik Mesin Industri","lat":-7.278758937273055,"lon":112.7926185070135,"category":"Departemen/Jurusan","description":""},{"id":8,"name":"Teknik Kimia Industri","lat":-7.278759134474123,"lon":112.7923828371237,"category":"Departemen/Jurusan","description":""},{"id":9,"name":"Teknik Elektro Otomasi","lat":-7.278763129801112,"lon":112.7921820904474,"category":"Departemen/Jurusan","description":""},{"id":10,"name":"Parkir Motor Vokasi","lat":-7.27894248242908,"lon":112.7921781021983,"category":"Parkir","description":""},{"id":11,"name":"Main Spine","lat":-7.279304473614967,"lon":112.7925446822315,"category":"Gedung/Fasilitas","description":""},{"id":12,"name":"Teknik Lingkungan","lat":-7.279747582598826,"lon":112.7926296634754,"category":"Departemen/Jurusan","description":""},{"id":13,"name":"Teknik Sipil","lat":-7.280250052012113,"lon":112.7931646723237,"category":"Departemen/Jurusan","description":""},{"id":14,"name":"Arsitektur","lat":-7.281085750995243,"lon":112.7941843292891,"category":"Departemen/Jurusan","description":""},{"id":15,"name":"REKTORAT ITS","lat":-7.281453307948724,"lon":112.7945888426988,"category":"Administrasi/Fakultas","description":""},{"id":16,"name":"Perpustakaan ITS","lat":-7.281652097503969,"lon":112.7954884076205,"category":"Fasilitas Umum","description":""},{"id":17,"name":"Fakultas Kedokteran dan Kesehatan","lat":-7.280510095798792,"lon":112.7952203034833,"category":"Administrasi/Fakultas","description":""},{"id":18,"name":"Teknik Sistem Informasi","lat":-7.280687934294972,"lon":112.7960732751479,"category":"Departemen/Jurusan","description":""},{"id":19,"name":"Teknik Perencanaan Wilayah dan Kota","lat":-7.279667845136431,"lon":112.7940832747499,"category":"Departemen/Jurusan","description":""},{"id":20,"name":"Teknik Geomatika","lat":-7.280038277762258,"lon":112.7947782712224,"category":"Departemen/Jurusan","description":""},{"id":21,"name":"Teknik Geofisika","lat":-7.279981105938933,"lon":112.7955458979256,"category":"Departemen/Jurusan","description":""},{"id":22,"name":"Desain Interior","lat":-7.279555329310434,"lon":112.7958397008523,"category":"Gedung/Fasilitas","description":""},{"id":23,"name":"Desain Produk","lat":-7.278767663042802,"lon":112.7965973758037,"category":"Gedung/Fasilitas","description":""},{"id":24,"name":"Desain Komunikasi Visual","lat":-7.278434644344618,"lon":112.7969470563458,"category":"Gedung/Fasilitas","description":""},{"id":25,"name":"Teknik Informatika","lat":-7.279627121306686,"lon":112.7975169869784,"category":"Departemen/Jurusan","description":""},{"id":26,"name":"Gedung Riset Center","lat":-7.281107797310416,"lon":112.797299142528,"category":"Gedung/Fasilitas","description":""},{"id":27,"name":"Teknik Perkapalan","lat":-7.281831597739759,"lon":112.797272055252,"category":"Departemen/Jurusan","description":""},{"id":28,"name":"Teknik Kelautan","lat":-7.28215909577796,"lon":112.796354597313,"category":"Departemen/Jurusan","description":""},{"id":29,"name":"Teknik Sistem Perkapalan","lat":-7.282123008185157,"lon":112.7967515355626,"category":"Departemen/Jurusan","description":""},{"id":30,"name":"Teknik Transportasi Laut","lat":-7.282273901295431,"lon":112.7984489283137,"category":"Departemen/Jurusan","description":""},{"id":31,"name":"Masjid Manarul Ilmi","lat":-7.282382909515469,"lon":112.7930687285705,"category":"Tempat Ibadah","description":""},{"id":32,"name":"REIDI ITS","lat":-7.282626224938442,"lon":112.790759707936,"category":"Gedung/Fasilitas","description":""},{"id":33,"name":"Teknik Kimia","lat":-7.282972730395653,"lon":112.7966969772615,"category":"Departemen/Jurusan","description":""},{"id":34,"name":"Studi Pembangunan","lat":-7.282457831722672,"lon":112.7953969306884,"category":"Gedung/Fasilitas","description":""},{"id":35,"name":"Gedung KPA ITS","lat":-7.282433879977398,"lon":112.7947420410961,"category":"Gedung/Fasilitas","description":""},{"id":36,"name":"Theater A","lat":-7.283391503025636,"lon":112.7950892476776,"category":"Gedung/Fasilitas","description":""},{"id":37,"name":"Kimia","lat":-7.283875875459094,"lon":112.7947541058257,"category":"Gedung/Fasilitas","description":""},{"id":38,"name":"SCC","lat":-7.283424878549546,"lon":112.7936001727509,"category":"Gedung/Fasilitas","description":""},{"id":39,"name":"Parkir Motor KPA 1","lat":-7.283111978887274,"lon":112.7939573093065,"category":"Parkir","description":""},{"id":40,"name":"Kantin Pusat ITS","lat":-7.283924005879613,"lon":112.7940297989877,"category":"Kantin/Food","description":""},{"id":41,"name":"Teknik Fisika","lat":-7.283765058383927,"lon":112.7960603822553,"category":"Departemen/Jurusan","description":""},{"id":42,"name":"Theater B","lat":-7.284268194043348,"lon":112.7950932020467,"category":"Gedung/Fasilitas","description":""},{"id":43,"name":"Theater C","lat":-7.284583781906464,"lon":112.7953229138378,"category":"Gedung/Fasilitas","description":""},{"id":44,"name":"Fisika","lat":-7.284501382139265,"lon":112.7950762806123,"category":"Gedung/Fasilitas","description":""},{"id":45,"name":"Matematika","lat":-7.285103719590024,"lon":112.794695321783,"category":"Gedung/Fasilitas","description":""},{"id":46,"name":"Tower 1","lat":-7.285045257348544,"lon":112.7941098455182,"category":"Fasilitas Umum","description":""},{"id":47,"name":"Parkir Motor KPA 2","lat":-7.284621553648036,"lon":112.7937843633362,"category":"Parkir","description":""},{"id":48,"name":"Statistika","lat":-7.285417047452929,"lon":112.7941359376153,"category":"Departemen/Jurusan","description":""},{"id":49,"name":"Parkir Motor FSAD","lat":-7.285298453442345,"lon":112.7936389929094,"category":"Parkir","description":""},{"id":50,"name":"Biologi","lat":-7.285990736605063,"lon":112.794092202562,"category":"Gedung/Fasilitas","description":""},{"id":51,"name":"Tower 2","lat":-7.285221773654642,"lon":112.795349296566,"category":"Fasilitas Umum","description":""},{"id":52,"name":"Teknik Mesin","lat":-7.284365816053441,"lon":112.7960457489445,"category":"Departemen/Jurusan","description":""},{"id":53,"name":"Teknik Elektro","lat":-7.284914215362011,"lon":112.7960594447574,"category":"Departemen/Jurusan","description":""},{"id":54,"name":"Parkir Motor T Elektro","lat":-7.285267905191978,"lon":112.7966817537043,"category":"Parkir","description":""},{"id":55,"name":"Teknik Biomedik","lat":-7.284538047650577,"lon":112.7966140893171,"category":"Departemen/Jurusan","description":""},{"id":56,"name":"Teknik Industri","lat":-7.283834297946141,"lon":112.7974519324173,"category":"Departemen/Jurusan","description":""},{"id":57,"name":"Teknik Material dan Metalurgi","lat":-7.285089673729034,"lon":112.7977394707832,"category":"Departemen/Jurusan","description":""},{"id":58,"name":"Parkir Motor FTI","lat":-7.284519854743996,"lon":112.7971679094121,"category":"Parkir","description":""},{"id":59,"name":"Perumahan Dosen Blok U","lat":-7.283409985840117,"lon":112.7997325972686,"category":"Gedung/Fasilitas","description":""},{"id":60,"name":"CCWS","lat":-7.286777505480689,"lon":112.7938683880945,"category":"Gedung/Fasilitas","description":""},{"id":61,"name":"KPRI MART","lat":-7.286628702805277,"lon":112.7939909458135,"category":"Gedung/Fasilitas","description":""},{"id":62,"name":"PT. ITS Kemitraan","lat":-7.286954303230658,"lon":112.795375149669,"category":"Gedung/Fasilitas","description":""},{"id":63,"name":"Wisma Flamboyan","lat":-7.286268991725279,"lon":112.7975001261401,"category":"Gedung/Fasilitas","description":""},{"id":64,"name":"Wisma Bougenville","lat":-7.288060979898105,"lon":112.793485619892,"category":"Gedung/Fasilitas","description":""},{"id":65,"name":"GOR Pertamina ITS","lat":-7.283756451286794,"lon":112.791957345531,"category":"Fasilitas Umum","description":""},{"id":66,"name":"Stadion ITS","lat":-7.285374771564973,"lon":112.7924083866228,"category":"Fasilitas Umum","description":""},{"id":67,"name":"Kantor IKA ITS","lat":-7.284864900633123,"lon":112.7931716542485,"category":"Gedung/Fasilitas","description":""},{"id":68,"name":"Panjat Dinding ITS","lat":-7.28409581977382,"lon":112.7930528589671,"category":"Gedung/Fasilitas","description":""},{"id":69,"name":"Lapangan Basket","lat":-7.285209726533466,"lon":112.7931492778841,"category":"Fasilitas Umum","description":""},{"id":70,"name":"Lapangan Basket","lat":-7.285789511690009,"lon":112.7932261263487,"category":"Fasilitas Umum","description":""},{"id":71,"name":"Gor Bulutangkis","lat":-7.286750755817856,"lon":112.7930053829685,"category":"Fasilitas Umum","description":""},{"id":72,"name":"Lapangan Futsal Outdor","lat":-7.287284661326811,"lon":112.7927235024978,"category":"Fasilitas Umum","description":""},{"id":73,"name":"Kompleks Asrama Mahasiswa ITS","lat":-7.288197466584735,"lon":112.7916692808238,"category":"Gedung/Fasilitas","description":""},{"id":74,"name":"Blok A","lat":-7.287281695132999,"lon":112.7916957822158,"category":"Gedung/Fasilitas","description":""},{"id":75,"name":"Blok D","lat":-7.287657194581747,"lon":112.7924183961521,"category":"Gedung/Fasilitas","description":""},{"id":76,"name":"Blok F","lat":-7.287730537589971,"lon":112.7918898566936,"category":"Gedung/Fasilitas","description":""},{"id":77,"name":"Blok C","lat":-7.287863176293064,"lon":112.7914163800575,"category":"Gedung/Fasilitas","description":""},{"id":78,"name":"Blok B","lat":-7.287614199339684,"lon":112.7910350080208,"category":"Gedung/Fasilitas","description":""},{"id":79,"name":"Blok J","lat":-7.287784661108391,"lon":112.790284776207,"category":"Gedung/Fasilitas","description":""},{"id":80,"name":"Blok M","lat":-7.288149156526068,"lon":112.7902129117999,"category":"Gedung/Fasilitas","description":""},{"id":81,"name":"Blok K","lat":-7.288467878526685,"lon":112.790234242282,"category":"Gedung/Fasilitas","description":""},{"id":82,"name":"Blok I","lat":-7.288183892350586,"lon":112.7909058027963,"category":"Gedung/Fasilitas","description":""},{"id":83,"name":"Blok G","lat":-7.289023065624572,"lon":112.7908930832798,"category":"Gedung/Fasilitas","description":""},{"id":84,"name":"Blok H","lat":-7.288627412025087,"lon":112.7914593512055,"category":"Gedung/Fasilitas","description":""},{"id":85,"name":"Blok E","lat":-7.288996754711724,"lon":112.7916758636363,"category":"Gedung/Fasilitas","description":""},{"id":86,"name":"Medical Center ITS","lat":-7.290342877545046,"lon":112.7928387291153,"category":"Gedung/Fasilitas","description":""},{"id":87,"name":"International Dormitory ITS","lat":-7.2902556270746,"lon":112.7931986294713,"category":"Gedung/Fasilitas","description":""},{"id":88,"name":"ITS Mart","lat":-7.29002536159715,"lon":112.7963246157911,"category":"Gedung/Fasilitas","description":""},{"id":89,"name":"Workshop Mobil Listrik Nasional","lat":-7.289286576071739,"lon":112.7965417060894,"category":"Gedung/Fasilitas","description":""},{"id":90,"name":"TK Sepuluh Nopember","lat":-7.288868491314642,"lon":112.7962235570024,"category":"Gedung/Fasilitas","description":""},{"id":91,"name":"Dharmawanita ITS","lat":-7.288515437059157,"lon":112.7960739134461,"category":"Gedung/Fasilitas","description":""},{"id":92,"name":"Perumahan Dosen ITS","lat":-7.28639078246941,"lon":112.7986130577326,"category":"Gedung/Fasilitas","description":""},{"id":93,"name":"Gerbang ITS Pos 1","lat":-7.279609404146377,"lon":112.7907802544265,"category":"Gedung/Fasilitas","description":""},{"id":94,"name":"Gerbang ITS Pos 2","lat":-7.290517227513766,"lon":112.7920271646925,"category":"Gedung/Fasilitas","description":""},{"id":95,"name":"Gerbang ITS Pos 3","lat":-7.275777320713854,"lon":112.7950221411192,"category":"Gedung/Fasilitas","description":""},{"id":96,"name":"Gedung Otomotive","lat":-7.276772474828655,"lon":112.7967317878537,"category":"Gedung/Fasilitas","description":""},{"id":97,"name":"Gedung Robotika","lat":-7.277336592620822,"lon":112.7974588584085,"category":"Gedung/Fasilitas","description":""},{"id":98,"name":"Science Techno Park (STP)","lat":-7.278351485261734,"lon":112.7977433625405,"category":"Gedung/Fasilitas","description":""},{"id":99,"name":"Gedung Creative Center","lat":-7.278016663510784,"lon":112.7987026951813,"category":"Gedung/Fasilitas","description":""},{"id":100,"name":"Sirkuit ITS","lat":-7.278142603426979,"lon":112.8000351847271,"category":"Gedung/Fasilitas","description":""},{"id":101,"name":"Gedung NASDEC","lat":-7.279054924001008,"lon":112.7984829823248,"category":"Gedung/Fasilitas","description":""},{"id":102,"name":"Gedung Maritime Center","lat":-7.279377383876944,"lon":112.7988383876154,"category":"Gedung/Fasilitas","description":""},{"id":103,"name":"Pengolahan Kompos ITS","lat":-7.290330014387939,"lon":112.7899211990155,"category":"Gedung/Fasilitas","description":""},{"id":104,"name":"Gedung Perbankan","lat":-7.290101830956138,"lon":112.7914685993658,"category":"Gedung/Fasilitas","description":""},{"id":105,"name":"Gedung Perbankan","lat":-7.284443556598946,"lon":112.7930403350742,"category":"Gedung/Fasilitas","description":""},{"id":106,"name":"Gedung Bang BNI ITS","lat":-7.283870608543023,"lon":112.7936364461245,"category":"Gedung/Fasilitas","description":""},{"id":107,"name":"TPS Limbah B3 ITS","lat":-7.276686221265257,"lon":112.7972614878996,"category":"Gedung/Fasilitas","description":""},{"id":108,"name":"Creative Desain Center","lat":-7.276747679329421,"lon":112.798891653533,"category":"Gedung/Fasilitas","description":""},{"id":109,"name":"Fakultas Kedokteran dan Kesehatan","lat":-7.275623215646355,"lon":112.7958187061861,"category":"Administrasi/Fakultas","description":""},{"id":110,"name":"Gedung ILBI ITS","lat":-7.276002130395498,"lon":112.7958461269055,"category":"Gedung/Fasilitas","description":""}];
+const INITIAL_CENTER = [-7.2833265, 112.7944532];
+const INITIAL_BOUNDS = [[-7.2935172, 112.7869212], [-7.2726232, 112.8030352]];
+
+const map = L.map('map', { zoomControl:true }).setView(INITIAL_CENTER, 16);
+
+const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 20,
+  attribution: '&copy; OpenStreetMap contributors'
+}).addTo(map);
+
+const pointLayer = L.layerGroup().addTo(map);
+const roadLayer = L.layerGroup().addTo(map);
+const userLayer = L.layerGroup().addTo(map);
+let markerByName = new Map();
+let allMarkers = [];
+
+function categoryColor(cat) {
+  if (cat === 'Departemen/Jurusan') return '#2563eb';
+  if (cat === 'Administrasi/Fakultas') return '#dc2626';
+  if (cat === 'Parkir') return '#ea580c';
+  if (cat === 'Tempat Ibadah') return '#16a34a';
+  if (cat === 'Kantin/Food') return '#9333ea';
+  if (cat === 'Fasilitas Umum') return '#0f766e';
+  return '#475569';
+}
+
+function popupHtml(p) {
+  const gmaps = `https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lon}`;
+  return `<div class="popup-title">${escapeHtml(p.name)}</div>
+          <div class="popup-cat">${escapeHtml(p.category)}</div>
+          <div class="popup-coord">Lat: ${p.lat.toFixed(6)}<br>Lon: ${p.lon.toFixed(6)}</div>
+          <div style="margin-top:8px"><a href="${gmaps}" target="_blank">Buka di Google Maps</a></div>`;
+}
+
+function escapeHtml(str) {
+  return String(str || '').replace(/[&<>'"]/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[s]));
+}
+
+function addLocationMarkers() {
+  LOCATIONS.forEach(p => {
+    const marker = L.circleMarker([p.lat, p.lon], {
+      radius: 7,
+      color: '#ffffff',
+      weight: 2,
+      fillColor: categoryColor(p.category),
+      fillOpacity: .95
+    }).bindPopup(popupHtml(p));
+    marker.locationData = p;
+    marker.addTo(pointLayer);
+    markerByName.set(p.name.toLowerCase(), marker);
+    allMarkers.push(marker);
+  });
+  map.fitBounds(INITIAL_BOUNDS, {padding:[30,30]});
+}
+
+function renderResults(query='') {
+  const q = query.trim().toLowerCase();
+  const filtered = LOCATIONS.filter(p => !q || p.name.toLowerCase().includes(q) || p.category.toLowerCase().includes(q));
+  const results = document.getElementById('results');
+  results.innerHTML = '';
+  filtered.slice(0, 80).forEach(p => {
+    const div = document.createElement('div');
+    div.className = 'result-item';
+    div.innerHTML = `<div class="result-name">${escapeHtml(p.name)}</div><div class="result-cat">${escapeHtml(p.category)} · ${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}</div>`;
+    div.onclick = () => zoomToLocation(p.name);
+    results.appendChild(div);
+  });
+  document.getElementById('countInfo').textContent = `${filtered.length} dari ${LOCATIONS.length} titik`;
+}
+
+function buildDatalist() {
+  const dl = document.getElementById('locationList');
+  LOCATIONS.forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p.name;
+    dl.appendChild(opt);
+  });
+}
+
+function zoomToLocation(name) {
+  const p = LOCATIONS.find(x => x.name.toLowerCase() === name.toLowerCase()) || LOCATIONS.find(x => x.name.toLowerCase().includes(name.toLowerCase()));
+  if (!p) return false;
+  const marker = allMarkers.find(m => m.locationData.id === p.id);
+  map.setView([p.lat, p.lon], 18, {animate:true});
+  marker.openPopup();
+  return true;
+}
+
+function doSearch() {
+  const q = document.getElementById('searchInput').value.trim();
+  if (!q) { renderResults(''); return; }
+  const found = zoomToLocation(q);
+  renderResults(q);
+  if (!found) alert('Lokasi belum ditemukan. Coba kata kunci lain, misalnya: Sipil, Elektro, Rektorat, Perpustakaan.');
+}
+
+document.getElementById('searchInput').addEventListener('input', e => renderResults(e.target.value));
+document.getElementById('searchInput').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+document.getElementById('searchBtn').addEventListener('click', doSearch);
+
+function showUserPosition(position) {
+  const lat = position.coords.latitude;
+  const lon = position.coords.longitude;
+  const acc = position.coords.accuracy || 0;
+  userLayer.clearLayers();
+  L.circle([lat, lon], { radius: 500, color:'#0284c7', weight:2, fillColor:'#38bdf8', fillOpacity:0.12 }).addTo(userLayer);
+  L.circleMarker([lat, lon], { radius:8, color:'#fff', weight:2, fillColor:'#0284c7', fillOpacity:1 })
+    .bindPopup(`<b>Posisi GPS Pengamat</b><br>Radius ditampilkan: 500 m<br>Akurasi perangkat ±${Math.round(acc)} m`)
+    .addTo(userLayer).openPopup();
+  map.setView([lat, lon], 17);
+}
+
+function locateMe() {
+  if (!navigator.geolocation) { alert('Browser tidak mendukung GPS/geolocation.'); return; }
+  navigator.geolocation.getCurrentPosition(showUserPosition, err => {
+    alert('GPS belum dapat diakses. Pastikan izin lokasi aktif dan file dibuka melalui HTTPS/Netlify atau localhost.');
+  }, { enableHighAccuracy:true, timeout:12000, maximumAge:10000 });
+}
+document.getElementById('gpsBtn').addEventListener('click', locateMe);
+
+// Bila dibuka dari HP, minta akses GPS otomatis setelah halaman siap.
+if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+  setTimeout(() => { locateMe(); }, 1200);
+}
+
+async function loadOsmRoads() {
+  const b = INITIAL_BOUNDS;
+  const south = b[0][0], west = b[0][1], north = b[1][0], east = b[1][1];
+  const query = `[out:json][timeout:25];(way["highway"](${south},${west},${north},${east}););out geom;`;
+  const endpoints = [
+    'https://overpass-api.de/api/interpreter',
+    'https://overpass.kumi.systems/api/interpreter'
+  ];
+  for (const endpoint of endpoints) {
+    try {
+      const res = await fetch(endpoint, { method:'POST', body: query, headers: {'Content-Type':'text/plain'} });
+      if (!res.ok) throw new Error('Overpass gagal');
+      const data = await res.json();
+      let count = 0;
+      data.elements.filter(el => el.type === 'way' && el.geometry).forEach(way => {
+        const coords = way.geometry.map(g => [g.lat, g.lon]);
+        const highway = way.tags && way.tags.highway;
+        const major = ['primary','secondary','tertiary','residential','service','unclassified'].includes(highway);
+        L.polyline(coords, {
+          color: major ? '#334155' : '#64748b',
+          weight: major ? 3 : 1.5,
+          opacity: major ? .75 : .55
+        }).bindPopup(`<b>Jalan OSM</b><br>${escapeHtml(way.tags?.name || highway || 'jalan')}`).addTo(roadLayer);
+        count++;
+      });
+      document.getElementById('roadInfo').textContent = `Jalan: ${count} segmen`;
+      return;
+    } catch(e) { console.warn('Gagal load road dari', endpoint, e); }
+  }
+  document.getElementById('roadInfo').textContent = 'Jalan: mengikuti basemap';
+}
+
+const baseMaps = { 'OpenStreetMap': osm };
+const overlays = { 'Titik Lokasi ITS': pointLayer, 'Garis Jalan OSM': roadLayer, 'Posisi GPS + Radius 500 m': userLayer };
+L.control.layers(baseMaps, overlays, { collapsed:true }).addTo(map);
+L.control.scale({ imperial:false, metric:true }).addTo(map);
+
+addLocationMarkers();
+buildDatalist();
+renderResults('');
+loadOsmRoads();
+</script>
+</body>
+</html>
